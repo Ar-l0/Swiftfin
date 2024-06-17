@@ -1,0 +1,95 @@
+#name this document ExportOptions.plist
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>compileBitcode</key>
+    <false/>
+    <key>destination</key>
+    <string>export</string>
+    <key>method</key>
+    <string>ad-hoc</string>
+    <key>signingStyle</key>
+    <string>manual</string>
+    <key>stripSwiftSymbols</key>
+    <true/>
+    <key>thinning</key>
+    <string>&lt;none&gt;</string>
+</dict>
+</plist>
+```
+3. go to .github > workflows > ci.yml and paste this code there:
+```
+# template taken from the YTLitePlus github + some of my own modifications.
+# https://github.com/YTLitePlus/YTLitePlus/blob/main/.github/workflows/buildapp.yml
+name: "Build and Release Swiftfin"
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: "Modify the bundle ID (optional)"
+        default: "org.jellyfin.swiftfin"
+        required: false
+        type: string
+      app_name:
+        description: "Modify the name of the app on the Home Screen (optional)"
+        default: "Swiftfin"
+        required: false
+        type: string
+
+jobs:
+  build:
+    name: Build Swiftfin
+    runs-on: macos-14
+    permissions:
+      contents: write
+
+    steps:
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Checkout Main
+        uses: actions/checkout@v4.1.6
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          brew install ldid dpkg make
+          brew install swiftgen
+          carthage update --use-xcframeworks --cache-builds
+
+      - name: Set Xcode Version
+        run: sudo xcode-select -s "/Applications/Xcode_15.3.app"
+
+      - name: Build the Project
+        run: |
+          xcodebuild clean build \
+          -project "Swiftfin.xcodeproj" \
+          -scheme "Swiftfin" \
+          -configuration Release \
+          -derivedDataPath build/derived_data \
+          CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+
+      - name: Create Payload Directory
+        run: mkdir -p build/Payload
+
+      - name: Copy App to Payload
+        run: cp -r build/derived_data/Build/Products/Release-iphoneos/"Swiftfin iOS.app" build/Payload
+
+      - name: Fake Code Sign the App
+        run: ldid -S build/Payload/"Swiftfin iOS.app"/"Swiftfin iOS"
+
+      - name: Package IPA
+        run: |
+          cd build
+          zip -r Swiftfin.ipa Payload
+
+      - name: Upload IPA as Artifact
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: Swiftfin-ipa
+          path: build/Swiftfin.ipa
