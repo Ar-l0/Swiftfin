@@ -27,6 +27,10 @@ public class UIPreferencesHostingController: UIHostingController<AnyView> {
                 .onPreferenceChange(SupportedOrientationsPreferenceKey.self) {
                     box.value?._orientations = $0
                 }
+            #elseif os(tvOS)
+                .onPreferenceChange(PressCommandsPreferenceKey.self) {
+                    box.value?._pressCommandActions = $0
+                }
             #endif
         )
 
@@ -81,6 +85,8 @@ public class UIPreferencesHostingController: UIHostingController<AnyView> {
         didSet {
             if #available(iOS 16, *) {
                 setNeedsUpdateOfSupportedInterfaceOrientations()
+            } else {
+                AppRotationUtility.lockOrientation(_orientations)
             }
         }
     }
@@ -110,4 +116,52 @@ public class UIPreferencesHostingController: UIHostingController<AnyView> {
     }
 
     #endif
+
+    #if os(tvOS)
+
+    override public func viewDidLoad() {
+        super.viewDidLoad()
+
+        let gesture = UITapGestureRecognizer(target: self, action: #selector(ignorePress))
+        gesture.allowedPressTypes = [NSNumber(value: UIPress.PressType.menu.rawValue)]
+        view.addGestureRecognizer(gesture)
+    }
+
+    @objc
+    func ignorePress() {}
+
+    private var _pressCommandActions: [PressCommandAction] = []
+
+    override public func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard let buttonPress = presses.first?.type else { return }
+
+        guard let action = _pressCommandActions
+            .first(where: { $0.press == buttonPress }) else { return }
+        action.action()
+    }
+    #endif
 }
+
+// TODO: remove after iOS 15 support removed
+
+#if os(iOS)
+enum AppRotationUtility {
+
+    static func lockOrientation(_ orientationLock: UIInterfaceOrientationMask) {
+
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+
+        let rotateOrientation: UIInterfaceOrientation
+
+        switch orientationLock {
+        case .landscape:
+            rotateOrientation = .landscapeRight
+        default:
+            rotateOrientation = .portrait
+        }
+
+        UIDevice.current.setValue(rotateOrientation.rawValue, forKey: "orientation")
+        UINavigationController.attemptRotationToDeviceOrientation()
+    }
+}
+#endif
